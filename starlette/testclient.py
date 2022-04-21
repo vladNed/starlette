@@ -10,7 +10,7 @@ import sys
 import types
 import typing
 from concurrent.futures import Future
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlparse, parse_qsl, urlencode
 
 import anyio.abc
 import requests
@@ -495,7 +495,9 @@ class TestClient(requests.Session):
     def websocket_connect(
         self, url: str, subprotocols: typing.Sequence[str] = None, **kwargs: typing.Any
     ) -> typing.Any:
+        query_params = kwargs.get("params", {})
         url = urljoin("ws://testserver", url)
+        url = self._encode_ws_params(query_params, url)
         headers = kwargs.get("headers", {})
         headers.setdefault("connection", "upgrade")
         headers.setdefault("sec-websocket-key", "testserver==")
@@ -548,6 +550,17 @@ class TestClient(requests.Session):
             await self.app(scope, self.stream_receive.receive, self.stream_send.send)
         finally:
             await self.stream_send.send(None)
+
+    @staticmethod
+    def _encode_ws_params(params: dict, url: str) -> str:
+        """Add query params args to the url"""
+        url_encoded = urlparse(url)
+
+        query_params = dict(parse_qsl(url_encoded.query))
+        query_params.update(params)
+        url_encoded = url_encoded._replace(query=urlencode(query_params))
+
+        return url_encoded.geturl()
 
     async def wait_startup(self) -> None:
         await self.stream_receive.send({"type": "lifespan.startup"})
